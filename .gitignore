@@ -1,5 +1,17 @@
 secrets/
 .idea/
 .venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Local data (downloaded TMDB exports land here)
+data/
+
+# Postgres volume (if run outside docker)
+pgdata/
 
 .DS_Store

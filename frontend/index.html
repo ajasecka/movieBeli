@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+  <title>movieBeli</title>
+  <meta name="description" content="Hard-rank the movies you've seen." />
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#0f766e" />
+
+  <!-- iOS add-to-home-screen -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="movieBeli" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Top bar -->
+    <header class="topbar">
+      <h1 class="brand">movie<span>Beli</span></h1>
+      <div id="index-status" class="index-status" title="Local movie index"></div>
+    </header>
+
+    <!-- Views -->
+    <main id="view-rankings" class="view active"></main>
+    <main id="view-search" class="view"></main>
+
+    <!-- Bottom navigation -->
+    <nav class="tabbar">
+      <button class="tab active" data-view="rankings">
+        <span class="tab-icon">★</span>
+        <span class="tab-label">Rankings</span>
+      </button>
+      <button class="tab" data-view="search">
+        <span class="tab-icon">+</span>
+        <span class="tab-label">Add</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Full-screen overlays (preview + comparison), injected by JS -->
+  <div id="overlay-root"></div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
