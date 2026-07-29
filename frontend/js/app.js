@@ -73,6 +73,15 @@ function switchView(name) {
     t.classList.toggle("active", t.dataset.view === name)
   );
   if (name === "rankings") renderRankings();
+  if (name === "watchlist") renderWatchlist();
+}
+
+// Re-render whatever list-bearing view is active (after add/remove/rank).
+function refreshAfterListChange() {
+  if (state.view === "watchlist") renderWatchlist();
+  if (state.view === "rankings") renderRankings();
+  const si = $("#search-input");
+  if (si && si.value.trim()) doSearch(si.value);
 }
 
 async function renderRankings() {
@@ -118,6 +127,79 @@ function rankCard(m) {
   // Tap a card to view / edit its note or remove it.
   card.addEventListener("click", () => openDetail(m));
   return card;
+}
+
+// ---------- Watchlist ----------
+async function renderWatchlist() {
+  const root = $("#view-watchlist");
+  root.innerHTML = `<div class="spinner"></div>`;
+  try {
+    const { watchlist } = await api.watchlist();
+    if (!watchlist.length) {
+      root.innerHTML = `
+        <div class="empty">
+          <div class="big">🔖</div>
+          <h2>Your watchlist is empty</h2>
+          <p>Save movies you want to see. When you've<br/>watched one, rank it from here.</p>
+          <button class="cta" id="empty-wl-add">Find something to watch</button>
+        </div>`;
+      $("#empty-wl-add").onclick = () => switchView("search");
+      return;
+    }
+    root.innerHTML = `<div class="section-title">Want to watch · ${watchlist.length}</div>
+      <div class="rank-list"></div>`;
+    const list = root.querySelector(".rank-list");
+    watchlist.forEach((m) => list.appendChild(watchCard(m)));
+  } catch (e) {
+    root.innerHTML = `<div class="hint">Couldn't load watchlist.<br/>${esc(e.message)}</div>`;
+  }
+}
+
+function watchCard(m) {
+  const sub = [m.release_year, m.director, runtimeText(m.runtime)].filter(Boolean).join(" · ");
+  const rating = m.vote_average
+    ? `<span class="wl-rating"><span class="star">★</span> ${m.vote_average.toFixed(1)}</span>`
+    : "";
+  const card = el(`
+    <div class="rank-card">
+      <div class="wl-mark">🔖</div>
+      ${posterHtml(m, "w185")}
+      <div class="rank-meta">
+        <div class="rank-title">${esc(m.title)}</div>
+        <div class="rank-sub">${esc(sub)}</div>
+        <div class="genre-chips">${(m.genres || []).slice(0, 2).map((g) => `<span class="chip">${esc(g)}</span>`).join("")}${rating}</div>
+      </div>
+      <button class="wl-rank-btn">Rank</button>
+    </div>`);
+  // Tap the card -> detail; tap Rank -> jump straight into placement.
+  card.addEventListener("click", () => openPreview(m.id, true));
+  card.querySelector(".wl-rank-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    startRanking(m);
+  });
+  return card;
+}
+
+async function addToWatchlist(movie) {
+  try {
+    await api.addWatchlist(movie.id);
+    toast(`Added ${movie.title} to watchlist`);
+    closeOverlay();
+    refreshAfterListChange();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function removeFromWatchlist(movie) {
+  try {
+    await api.removeWatchlist(movie.id);
+    toast("Removed from watchlist");
+    closeOverlay();
+    refreshAfterListChange();
+  } catch (e) {
+    toast(e.message);
+  }
 }
 
 // From a search result, look up the full ranked entry and open its detail.
@@ -215,19 +297,25 @@ async function doSearch(q) {
     }
     listEl.innerHTML = "";
     results.forEach((r) => {
-      const right = r.already_ranked
-        ? `<div class="result-rank">
+      let right;
+      if (r.already_ranked) {
+        right = `<div class="result-rank">
              <span class="mini-score" style="background:${scoreColor(r.score)}">${r.score.toFixed(1)}</span>
              <span class="rank-hash">#${r.rank}</span>
-           </div>`
-        : `<div class="go">Add →</div>`;
+           </div>`;
+      } else if (r.in_watchlist) {
+        right = `<div class="go wl">🔖 Watchlist</div>`;
+      } else {
+        right = `<div class="go">Add →</div>`;
+      }
       const row = el(`
         <div class="result-row ${r.already_ranked ? "ranked" : ""}">
           <div class="result-title">${esc(r.title)}</div>
           ${right}
         </div>`);
-      // Unranked -> add & rank. Already-ranked -> open its detail (view/edit note).
-      row.onclick = () => (r.already_ranked ? openRankedDetail(r.id) : openPreview(r.id));
+      // Ranked -> its detail; otherwise the preview (watchlist-aware).
+      row.onclick = () =>
+        r.already_ranked ? openRankedDetail(r.id) : openPreview(r.id, r.in_watchlist);
       listEl.appendChild(row);
     });
   } catch (e) {
@@ -239,7 +327,7 @@ async function doSearch(q) {
 // ---------- Overlays ----------
 function closeOverlay() { $("#overlay-root").innerHTML = ""; }
 
-async function openPreview(movieId) {
+async function openPreview(movieId, inWatchlist = false) {
   const root = $("#overlay-root");
   root.innerHTML = `<div class="overlay"><div class="overlay-head">
       <button class="close">✕</button></div>
@@ -247,6 +335,12 @@ async function openPreview(movieId) {
   root.querySelector(".close").onclick = closeOverlay;
   try {
     const { movie } = await api.movie(movieId);
+    // In watchlist -> Rank it / Remove. Otherwise -> Add & Rank / Add to Watchlist.
+    const actions = inWatchlist
+      ? `<button class="btn-primary" id="start-rank">I watched it — Rank it</button>
+         <button class="btn-danger" id="wl-remove">Remove from watchlist</button>`
+      : `<button class="btn-primary" id="start-rank">Add &amp; Rank</button>
+         <button class="btn-secondary" id="wl-add">🔖 Add to Watchlist</button>`;
     const body = root.querySelector(".overlay-body");
     body.innerHTML = `
       <div class="preview">
@@ -256,9 +350,13 @@ async function openPreview(movieId) {
         ${ratingHtml(movie)}
         ${genreChips(movie.genres)}
         ${movie.overview ? `<p class="overview">${esc(movie.overview)}</p>` : ""}
-        <button class="btn-primary" id="start-rank">Add &amp; Rank</button>
+        ${actions}
       </div>`;
     body.querySelector("#start-rank").onclick = () => startRanking(movie);
+    const addBtn = body.querySelector("#wl-add");
+    if (addBtn) addBtn.onclick = () => addToWatchlist(movie);
+    const rmBtn = body.querySelector("#wl-remove");
+    if (rmBtn) rmBtn.onclick = () => removeFromWatchlist(movie);
   } catch (e) {
     root.querySelector(".overlay-body").innerHTML = `<div class="hint">${esc(e.message)}</div>`;
   }

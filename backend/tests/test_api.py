@@ -19,7 +19,14 @@ _FAKE = {
         "backdrop_path": None, "overview": "A hacker learns the truth.", "runtime": 136,
         "vote_average": 8.2, "vote_count": 26000,
         "genres": ["Action", "Sci-Fi"], "director": "The Wachowskis",
-    }
+    },
+    778: {
+        "id": 778, "title": "The Matrix Reloaded", "original_title": "The Matrix Reloaded",
+        "release_year": 2003, "release_date": "2003-05-15", "poster_path": "/reloaded.jpg",
+        "backdrop_path": None, "overview": "Neo fights on.", "runtime": 138,
+        "vote_average": 7.0, "vote_count": 10000,
+        "genres": ["Action", "Sci-Fi"], "director": "The Wachowskis",
+    },
 }
 tmdb.fetch_movie_details = lambda mid: _FAKE[mid]
 
@@ -110,6 +117,29 @@ def main():
               "empty note clears to null")
         r404 = client.put("/api/rankings/424242/note", json={"notes": "x"})
         check(r404.status_code == 404, "note on unranked movie -> 404")
+
+        print("\nWatchlist: add, list, search flag, 409 if ranked, auto-remove on rank")
+        r = client.post("/api/watchlist", json={"movie_id": 778})
+        check(r.status_code == 200, "add unranked movie to watchlist")
+        wl = client.get("/api/watchlist").json()["watchlist"]
+        check(len(wl) == 1 and wl[0]["id"] == 778, "watchlist lists the movie with details")
+        res = client.get("/api/search?q=matrix").json()["results"]
+        r778 = next(x for x in res if x["id"] == 778)
+        check(r778["in_watchlist"] is True and not r778["already_ranked"],
+              "search flags watchlisted (not ranked) movie")
+        conflict = client.post("/api/watchlist", json={"movie_id": 777})  # already ranked
+        check(conflict.status_code == 409, "cannot watchlist an already-ranked movie")
+        # Rank the watchlisted movie -> it should leave the watchlist automatically.
+        step = client.post("/api/rankings/start", json={"movie_id": 778}).json()
+        while not step.get("done"):
+            step = client.post("/api/rankings/compare",
+                               json={"placement_id": step["placement_id"], "prefer_new": False}).json()
+        check(client.get("/api/watchlist").json()["watchlist"] == [],
+              "ranking a watchlisted movie auto-removes it from the watchlist")
+        # Add then delete
+        client.post("/api/watchlist", json={"movie_id": 778})  # 778 is ranked now -> 409, ignore
+        added = client.get("/api/watchlist").json()["watchlist"]
+        check(added == [], "ranked movie stays out of watchlist")
 
         print("\nStatic frontend served at /")
         html = client.get("/")

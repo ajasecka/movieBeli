@@ -94,6 +94,19 @@ class Ranking(Base):
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
 
+class Watchlist(Base):
+    """Movies you want to watch but haven't ranked yet (Beli's "want to try").
+
+    A movie leaves the watchlist automatically once it gets ranked.
+    """
+
+    __tablename__ = "watchlist"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    movie_id = Column(BigInteger, ForeignKey("movie.id"), nullable=False, unique=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+
 class Meta(Base):
     """Small key/value store for ingest state (last export date, etc.)."""
 

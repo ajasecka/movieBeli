@@ -28,4 +28,8 @@ export const api = {
   remove: (movieId) => req(`/api/rankings/${movieId}`, { method: "DELETE" }),
   setNote: (movieId, notes) =>
     req(`/api/rankings/${movieId}/note`, { method: "PUT", body: JSON.stringify({ notes }) }),
+  watchlist: () => req("/api/watchlist"),
+  addWatchlist: (movieId) =>
+    req("/api/watchlist", { method: "POST", body: JSON.stringify({ movie_id: movieId }) }),
+  removeWatchlist: (movieId) => req(`/api/watchlist/${movieId}`, { method: "DELETE" }),
 };
