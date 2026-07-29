@@ -13,33 +13,17 @@ router = APIRouter(prefix="/api")
 
 
 # --------------------------------------------------------------------------
-# Search — served entirely from the local export index (no API calls).
+# Search — uses TMDB search API so results include release year and rating.
 # --------------------------------------------------------------------------
 @router.get("/search")
 def search(q: str = Query(..., min_length=1), limit: int = 20):
     term = q.strip()
     if not term:
         return {"results": []}
-    # Match each whitespace-separated word independently, in any order:
-    # "dark knight", "knight dark", and "dar kni" all find "The Dark Knight".
-    tokens = term.split()[:6]
-    conds = " AND ".join(
-        f"lower(original_title) LIKE lower(:t{i})" for i in range(len(tokens))
-    )
-    params = {f"t{i}": f"%{tok}%" for i, tok in enumerate(tokens)}
-    params["lim"] = min(limit, 50)
-    sql = text(
-        f"""
-        SELECT id, original_title, popularity
-        FROM movie_index
-        WHERE {conds}
-        ORDER BY popularity DESC
-        LIMIT :lim
-        """
-    )
+
+    tmdb_results = tmdb.search_movies(term, limit=min(limit, 50))
+
     with session_scope() as s:
-        rows = s.execute(sql, params).all()
-        # movie_id -> (position, score) for anything already in your rankings
         ranked = {
             r.movie_id: (r.position, r.score, r.tier)
             for r in s.execute(select(Ranking)).scalars().all()
@@ -47,21 +31,43 @@ def search(q: str = Query(..., min_length=1), limit: int = 20):
         watchlisted = set(s.execute(select(Watchlist.movie_id)).scalars().all())
 
     results = []
-    for r in rows:
+    for r in tmdb_results:
         item = {
-            "id": r.id,
-            "title": r.original_title,
-            "popularity": round(r.popularity, 1),
-            "already_ranked": r.id in ranked,
-            "in_watchlist": r.id in watchlisted,
+            **r,
+            "already_ranked": r["id"] in ranked,
+            "in_watchlist": r["id"] in watchlisted,
         }
-        if r.id in ranked:
-            position, score, tier = ranked[r.id]
+        if r["id"] in ranked:
+            position, score, tier = ranked[r["id"]]
             item["rank"] = position + 1
             item["score"] = score
             item["tier"] = tier
         results.append(item)
     return {"results": results}
+
+# --------------------------------------------------------------------------
+# Local index search (kept for reference — not currently wired up).
+# --------------------------------------------------------------------------
+# def _search_local(term: str, limit: int = 20):
+#     tokens = term.split()[:6]
+#     conds = " AND ".join(
+#         f"lower(mi.original_title) LIKE lower(:t{i})" for i in range(len(tokens))
+#     )
+#     params = {f"t{i}": f"%{tok}%" for i, tok in enumerate(tokens)}
+#     params["lim"] = min(limit, 50)
+#     sql = text(
+#         f"""
+#         SELECT mi.id, mi.original_title, mi.popularity,
+#                m.release_year, m.vote_average
+#         FROM movie_index mi
+#         LEFT JOIN movie m ON m.id = mi.id
+#         WHERE {conds}
+#         ORDER BY mi.popularity DESC
+#         LIMIT :lim
+#         """
+#     )
+#     with session_scope() as s:
+#         return s.execute(sql, params).all()
 
 
 # --------------------------------------------------------------------------

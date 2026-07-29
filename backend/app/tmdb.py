@@ -41,6 +41,36 @@ def _get(path: str, params: dict | None = None) -> dict:
     return resp.json()
 
 
+_GENRE_MAP: dict[int, str] = {
+    28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy", 80: "Crime",
+    99: "Documentary", 18: "Drama", 10751: "Family", 14: "Fantasy", 36: "History",
+    27: "Horror", 10402: "Music", 9648: "Mystery", 10749: "Romance",
+    878: "Sci-Fi", 10770: "TV Movie", 53: "Thriller", 10752: "War", 37: "Western",
+}
+
+
+def search_movies(query: str, limit: int = 20) -> list[dict]:
+    """Search TMDB for movies matching query. Returns enriched result dicts."""
+    data = _get("/search/movie", params={"query": query, "language": "en-US", "page": 1})
+    results = []
+    for r in (data.get("results") or [])[:limit]:
+        release_date = r.get("release_date") or ""
+        release_year = int(release_date[:4]) if len(release_date) >= 4 and release_date[:4].isdigit() else None
+        vote_average = r.get("vote_average") or None
+        vote_count = r.get("vote_count") or None
+        genres = [_GENRE_MAP[gid] for gid in (r.get("genre_ids") or []) if gid in _GENRE_MAP]
+        results.append({
+            "id": r["id"],
+            "title": r.get("title") or r.get("original_title") or "Untitled",
+            "popularity": round(float(r.get("popularity") or 0.0), 1),
+            "release_year": release_year,
+            "vote_average": round(vote_average, 1) if vote_average else None,
+            "vote_count": vote_count,
+            "genres": genres,
+        })
+    return results
+
+
 def fetch_movie_details(movie_id: int) -> dict:
     """Fetch full details for a movie and normalise into our cached shape.
 

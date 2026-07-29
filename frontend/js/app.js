@@ -511,11 +511,24 @@ async function _doSearch(q, listEl, hintEl) {
       } else if (r.in_watchlist) {
         right = `<div class="go wl">🔖 Watchlist</div>`;
       } else {
-        right = `<div class="go">${preferWatchlist ? "🔖 Save" : "Add →"}</div>`;
+        right = preferWatchlist ? `<div class="go wl">🔖 Save</div>` : "";
       }
+      const metaParts = [];
+      if (r.release_year) metaParts.push(r.release_year);
+      if (r.vote_average) {
+        const count = r.vote_count ? ` (${r.vote_count.toLocaleString()})` : "";
+        metaParts.push(`★ ${r.vote_average.toFixed(1)}${count}`);
+      }
+      if (r.genres && r.genres.length) metaParts.push(r.genres.slice(0, 2).join(", "));
+      const metaHtml = metaParts.length
+        ? `<div class="result-meta">${esc(metaParts.join(" · "))}</div>`
+        : "";
       const row = el(`
         <div class="result-row ${r.already_ranked ? "ranked" : ""}">
-          <div class="result-title">${esc(r.title)}</div>
+          <div class="result-title-wrap">
+            <div class="result-title">${esc(r.title)}</div>
+            ${metaHtml}
+          </div>
           ${right}
         </div>`);
       row.onclick = () =>
