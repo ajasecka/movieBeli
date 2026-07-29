@@ -31,17 +31,25 @@ def search(q: str = Query(..., min_length=1), limit: int = 20):
     )
     with session_scope() as s:
         rows = s.execute(sql, {"pat": f"%{term}%", "lim": min(limit, 50)}).all()
-        ranked_ids = set(s.execute(select(Ranking.movie_id)).scalars().all())
+        # movie_id -> (position, score) for anything already in your rankings
+        ranked = {
+            r.movie_id: (r.position, r.score)
+            for r in s.execute(select(Ranking)).scalars().all()
+        }
 
-    results = [
-        {
+    results = []
+    for r in rows:
+        item = {
             "id": r.id,
             "title": r.original_title,
             "popularity": round(r.popularity, 1),
-            "already_ranked": r.id in ranked_ids,
+            "already_ranked": r.id in ranked,
         }
-        for r in rows
-    ]
+        if r.id in ranked:
+            position, score = ranked[r.id]
+            item["rank"] = position + 1
+            item["score"] = score
+        results.append(item)
     return {"results": results}
 
 

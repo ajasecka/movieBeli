@@ -70,10 +70,15 @@ def main():
             check(cached is not None and cached.genres == ["Action", "Sci-Fi"],
                   "movie details cached in DB after add")
 
-        print("\nSearch now flags already-ranked")
+        print("\nSearch now flags already-ranked + shows rank/score")
         res = client.get("/api/search?q=matrix").json()["results"]
         matrix = next(x for x in res if x["id"] == 777)
         check(matrix["already_ranked"] is True, "ranked movie flagged in search")
+        check(matrix.get("rank") == 1 and matrix.get("score") == 10.0,
+              "search result carries personal rank + score")
+        unranked = next(x for x in res if x["id"] == 778)
+        check("rank" not in unranked and "score" not in unranked,
+              "unranked results omit rank/score")
 
         print("\nRankings list + score")
         ranks = client.get("/api/rankings").json()["rankings"]
