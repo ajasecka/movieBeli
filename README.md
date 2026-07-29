@@ -42,7 +42,14 @@ Two TMDB data sources, each doing the job it's good at:
  ┌─ ranking ─────┐   genre-first binary comparison → position → 0–10 score
  │ position·score│
  └───────────────┘
+ ┌─ watchlist ───┐   "want to watch" — auto-removed once a movie is ranked
+ │ movie_id      │
+ └───────────────┘
 ```
+
+Three tabs: **Rankings** (your ranked list), **Watchlist** (want to watch), and
+**Add** (search). Tapping any movie opens a full detail card — your score + the
+TMDB rating for ranked movies, or Add & Rank / Add to Watchlist for new ones.
 
 ---
 

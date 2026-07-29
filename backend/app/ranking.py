@@ -21,10 +21,10 @@ import math
 import uuid
 from dataclasses import dataclass, field
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from .db import session_scope
-from .models import Movie, Ranking
+from .models import Movie, Ranking, Watchlist
 
 # In-memory placement sessions, keyed by placement_id. Fine for a single-user
 # personal app; a server restart mid-placement just means re-adding the movie.
@@ -209,6 +209,8 @@ def _finalize(p: Placement, insert_at: int) -> dict:
         insert_at = max(0, min(insert_at, len(rows)))
 
         s.add(Ranking(movie_id=p.movie_id, position=insert_at, score=0.0))
+        # A ranked movie is no longer "want to watch".
+        s.execute(delete(Watchlist).where(Watchlist.movie_id == p.movie_id))
         s.flush()  # make the new row visible to _renumber's re-query
 
         # Rebuild the ordered id list with the new movie spliced in.

@@ -7,7 +7,7 @@ from sqlalchemy import select, text
 
 from .. import config, export_ingest, ranking, tmdb
 from ..db import session_scope
-from ..models import Movie, Ranking
+from ..models import Movie, Ranking, Watchlist
 
 router = APIRouter(prefix="/api")
 
@@ -44,6 +44,7 @@ def search(q: str = Query(..., min_length=1), limit: int = 20):
             r.movie_id: (r.position, r.score)
             for r in s.execute(select(Ranking)).scalars().all()
         }
+        watchlisted = set(s.execute(select(Watchlist.movie_id)).scalars().all())
 
     results = []
     for r in rows:
@@ -52,6 +53,7 @@ def search(q: str = Query(..., min_length=1), limit: int = 20):
             "title": r.original_title,
             "popularity": round(r.popularity, 1),
             "already_ranked": r.id in ranked,
+            "in_watchlist": r.id in watchlisted,
         }
         if r.id in ranked:
             position, score = ranked[r.id]
@@ -144,6 +146,51 @@ def set_note(movie_id: int, body: NoteBody):
 @router.delete("/rankings/{movie_id}")
 def delete_ranking(movie_id: int):
     return {"rankings": ranking.remove_ranking(movie_id)}
+
+
+# --------------------------------------------------------------------------
+# Watchlist ("want to watch")
+# --------------------------------------------------------------------------
+class WatchBody(BaseModel):
+    movie_id: int
+
+
+@router.get("/watchlist")
+def list_watchlist():
+    with session_scope() as s:
+        rows = s.execute(
+            select(Movie)
+            .join(Watchlist, Watchlist.movie_id == Movie.id)
+            .order_by(Watchlist.created_at.desc())
+        ).scalars().all()
+        return {"watchlist": [m.as_dict() for m in rows]}
+
+
+@router.post("/watchlist")
+def add_watchlist(body: WatchBody):
+    movie = _get_or_fetch_movie(body.movie_id)  # ensure details are cached
+    with session_scope() as s:
+        if s.execute(
+            select(Ranking).where(Ranking.movie_id == body.movie_id)
+        ).scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="That movie is already ranked.")
+        exists = s.execute(
+            select(Watchlist).where(Watchlist.movie_id == body.movie_id)
+        ).scalar_one_or_none()
+        if not exists:
+            s.add(Watchlist(movie_id=body.movie_id))
+    return {"ok": True, "movie": movie}
+
+
+@router.delete("/watchlist/{movie_id}")
+def remove_watchlist(movie_id: int):
+    with session_scope() as s:
+        row = s.execute(
+            select(Watchlist).where(Watchlist.movie_id == movie_id)
+        ).scalar_one_or_none()
+        if row:
+            s.delete(row)
+    return {"ok": True}
 
 
 # --------------------------------------------------------------------------
