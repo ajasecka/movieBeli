@@ -17,7 +17,8 @@ _FAKE = {
         "id": 777, "title": "The Matrix", "original_title": "The Matrix",
         "release_year": 1999, "release_date": "1999-03-31", "poster_path": "/matrix.jpg",
         "backdrop_path": None, "overview": "A hacker learns the truth.", "runtime": 136,
-        "vote_average": 8.2, "genres": ["Action", "Sci-Fi"], "director": "The Wachowskis",
+        "vote_average": 8.2, "vote_count": 26000,
+        "genres": ["Action", "Sci-Fi"], "director": "The Wachowskis",
     }
 }
 tmdb.fetch_movie_details = lambda mid: _FAKE[mid]
@@ -62,6 +63,14 @@ def main():
         check(all("matrix" in t.lower() for t in titles), "all results contain query")
         check("Unrelated Film" not in titles, "non-matches excluded")
 
+        print("\nSearch: multi-word, order-independent, partial tokens")
+        res = client.get("/api/search?q=reloaded matrix").json()["results"]
+        check([x["title"] for x in res] == ["The Matrix Reloaded"],
+              "out-of-order words match (reloaded matrix -> Reloaded)")
+        res = client.get("/api/search?q=mat rel").json()["results"]
+        check(any(x["title"] == "The Matrix Reloaded" for x in res),
+              "partial tokens match (mat rel -> Reloaded)")
+
         print("\nStart ranking (enrich-on-add caches details, first movie instant)")
         start = client.post("/api/rankings/start", json={"movie_id": 777}).json()
         check(start["done"] and start["position"] == 0, "first movie ranked instantly at 0")
@@ -84,6 +93,8 @@ def main():
         ranks = client.get("/api/rankings").json()["rankings"]
         check(len(ranks) == 1 and ranks[0]["score"] == 10.0, "list shows the movie at 10.0")
         check(ranks[0]["poster_path"] == "/matrix.jpg", "poster_path present for saved movie")
+        check(ranks[0]["vote_average"] == 8.2 and ranks[0]["vote_count"] == 26000,
+              "TMDB rating (vote_average + vote_count) cached and returned")
 
         print("\nNotes: set, update, appears in list, 404 when unranked")
         r = client.put("/api/rankings/777/note", json={"notes": "  Loved the bullet-time  "})

@@ -20,17 +20,25 @@ def search(q: str = Query(..., min_length=1), limit: int = 20):
     term = q.strip()
     if not term:
         return {"results": []}
+    # Match each whitespace-separated word independently, in any order:
+    # "dark knight", "knight dark", and "dar kni" all find "The Dark Knight".
+    tokens = term.split()[:6]
+    conds = " AND ".join(
+        f"lower(original_title) LIKE lower(:t{i})" for i in range(len(tokens))
+    )
+    params = {f"t{i}": f"%{tok}%" for i, tok in enumerate(tokens)}
+    params["lim"] = min(limit, 50)
     sql = text(
-        """
+        f"""
         SELECT id, original_title, popularity
         FROM movie_index
-        WHERE lower(original_title) LIKE lower(:pat)
+        WHERE {conds}
         ORDER BY popularity DESC
         LIMIT :lim
         """
     )
     with session_scope() as s:
-        rows = s.execute(sql, {"pat": f"%{term}%", "lim": min(limit, 50)}).all()
+        rows = s.execute(sql, params).all()
         # movie_id -> (position, score) for anything already in your rankings
         ranked = {
             r.movie_id: (r.position, r.score)
