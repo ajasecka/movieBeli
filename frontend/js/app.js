@@ -38,6 +38,24 @@ function toast(msg) {
   t._timer = setTimeout(() => t.classList.remove("show"), 2200);
 }
 
+// TMDB community rating badge (the rating the movie site itself provides).
+function ratingHtml(m) {
+  if (m.vote_average == null || m.vote_average === 0) return "";
+  const votes = m.vote_count ? ` · ${m.vote_count.toLocaleString()} votes` : "";
+  return `<div class="tmdb-rating">
+    <span class="star">★</span>
+    <span class="rating-val">${m.vote_average.toFixed(1)}</span>
+    <span class="rating-max">/10</span>
+    <span class="rating-src">TMDB${votes}</span>
+  </div>`;
+}
+
+function runtimeText(min) {
+  if (!min) return "";
+  const h = Math.floor(min / 60), r = min % 60;
+  return h ? `${h}h ${r}m` : `${r}m`;
+}
+
 function genreChips(genres = []) {
   if (!genres.length) return "";
   return `<div class="genre-chips">${genres
@@ -124,12 +142,16 @@ function openDetail(m) {
         <div class="preview">
           ${posterHtml(m, "w500", "poster lg")}
           <h2>${esc(m.title)}</h2>
-          <div class="year">#${m.rank} · ${m.score.toFixed(1)}${
-            [m.release_year, m.director].filter(Boolean).length
-              ? " · " + [m.release_year, m.director].filter(Boolean).map(esc).join(" · ")
-              : ""
-          }</div>
+          <div class="year">${[m.release_year, m.director, runtimeText(m.runtime)].filter(Boolean).map(esc).join(" · ")}</div>
+          <div class="rating-row">
+            <div class="your-rank">
+              <span class="mini-score" style="background:${scoreColor(m.score)}">${m.score.toFixed(1)}</span>
+              <span class="rank-hash">Your #${m.rank}</span>
+            </div>
+            ${ratingHtml(m)}
+          </div>
           ${genreChips(m.genres)}
+          ${m.overview ? `<p class="overview">${esc(m.overview)}</p>` : ""}
           <div class="note-editor">
             <label class="note-label">Your notes</label>
             <textarea class="note-input" id="note-input"
@@ -230,7 +252,8 @@ async function openPreview(movieId) {
       <div class="preview">
         ${posterHtml(movie, "w500", "poster lg")}
         <h2>${esc(movie.title)}</h2>
-        <div class="year">${[movie.release_year, movie.director].filter(Boolean).map(esc).join(" · ")}</div>
+        <div class="year">${[movie.release_year, movie.director, runtimeText(movie.runtime)].filter(Boolean).map(esc).join(" · ")}</div>
+        ${ratingHtml(movie)}
         ${genreChips(movie.genres)}
         ${movie.overview ? `<p class="overview">${esc(movie.overview)}</p>` : ""}
         <button class="btn-primary" id="start-rank">Add &amp; Rank</button>

@@ -53,7 +53,8 @@ class Movie(Base):
     backdrop_path = Column(String(255))
     overview = Column(Text)
     runtime = Column(Integer)
-    vote_average = Column(Float)
+    vote_average = Column(Float)  # TMDB community rating, 0-10
+    vote_count = Column(Integer)  # number of TMDB votes behind that rating
     genres = Column(JSONB, nullable=False, default=list)  # list[str] of names
     director = Column(Text)
     cached_at = Column(DateTime(timezone=True), default=_utcnow)
@@ -70,6 +71,7 @@ class Movie(Base):
             "overview": self.overview,
             "runtime": self.runtime,
             "vote_average": self.vote_average,
+            "vote_count": self.vote_count,
             "genres": self.genres or [],
             "director": self.director,
         }

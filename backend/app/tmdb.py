@@ -74,6 +74,7 @@ def fetch_movie_details(movie_id: int) -> dict:
         "overview": data.get("overview"),
         "runtime": data.get("runtime"),
         "vote_average": data.get("vote_average"),
+        "vote_count": data.get("vote_count"),
         "genres": [g["name"] for g in (data.get("genres") or []) if g.get("name")],
         "director": director,
     }

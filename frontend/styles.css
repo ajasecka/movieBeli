@@ -159,6 +159,23 @@ body {
 .preview .year { color: var(--text-dim); font-size: 14px; margin-top: 4px; }
 .preview .genre-chips { justify-content: center; margin: 14px 0; }
 .preview .overview { color: var(--text-dim); font-size: 14px; line-height: 1.6; text-align: left; margin: 16px auto; max-width: 480px; }
+
+/* TMDB rating badge */
+.tmdb-rating { display: inline-flex; align-items: baseline; gap: 5px; margin: 12px 0 2px; font-weight: 800; }
+.tmdb-rating .star { color: #f5c518; font-size: 18px; }
+.tmdb-rating .rating-val { font-size: 20px; color: var(--text); }
+.tmdb-rating .rating-max { font-size: 13px; color: var(--text-dim); font-weight: 600; }
+.tmdb-rating .rating-src { font-size: 12px; color: var(--text-dim); font-weight: 600; margin-left: 4px; letter-spacing: .02em; }
+
+/* Ranked detail: your rank next to the TMDB rating */
+.rating-row { display: flex; align-items: center; justify-content: center; gap: 18px; flex-wrap: wrap; margin: 12px 0 2px; }
+.rating-row .tmdb-rating { margin: 0; }
+.your-rank { display: inline-flex; align-items: center; gap: 8px; }
+.your-rank .mini-score {
+  min-width: 40px; height: 30px; padding: 0 8px; border-radius: 9px; color: #fff;
+  font-weight: 800; font-size: 15px; display: grid; place-items: center;
+}
+.your-rank .rank-hash { color: var(--text-dim); font-weight: 700; font-size: 14px; }
 .btn-primary {
   display: block; width: 100%; max-width: 480px; margin: 20px auto 0; padding: 16px;
   border-radius: 14px; border: none; background: var(--accent); color: #fff;
