@@ -35,6 +35,7 @@ _PLACEMENTS: dict[str, "Placement"] = {}
 class RankedEntry:
     movie_id: int
     genres: frozenset[str]
+    tier: str | None = None
 
 
 @dataclass
@@ -51,6 +52,9 @@ class Placement:
     band_hi: int = 0
     comparisons_done: int = 0
     estimated_total: int = 0
+    tier_lo: int = 0                   # tier band lower bound (inclusive)
+    tier_hi: int = 0                   # tier band upper bound (exclusive); 0 = unconstrained
+    tier_str: str | None = None        # "loved" | "liked" | "disliked"
 
 
 # --------------------------------------------------------------------------
@@ -64,24 +68,75 @@ def score_for(position: int, total: int) -> float:
 
 
 def _load_ranked() -> list[RankedEntry]:
-    """Current ranked list, best -> worst, with each movie's genre set."""
+    """Current ranked list, best -> worst, with each movie's genre set and tier."""
     with session_scope() as s:
         rows = s.execute(
-            select(Ranking.movie_id, Movie.genres)
+            select(Ranking.movie_id, Movie.genres, Ranking.tier)
             .join(Movie, Movie.id == Ranking.movie_id)
             .order_by(Ranking.position.asc())
         ).all()
-    return [RankedEntry(movie_id=mid, genres=frozenset(genres or [])) for mid, genres in rows]
+    return [
+        RankedEntry(movie_id=mid, genres=frozenset(genres or []), tier=tier)
+        for mid, genres, tier in rows
+    ]
 
 
 def _est(n: int) -> int:
     return max(1, math.ceil(math.log2(n + 1))) if n > 0 else 0
 
 
+_TIER_ORDER: dict[str, int] = {"loved": 0, "liked": 1, "disliked": 2}
+# Where to insert the first movie of a tier when no tier data exists at all.
+_TIER_DEFAULT_INSERT = {"loved": "start", "liked": "middle", "disliked": "end"}
+
+
+def _tier_band(ranked: list[RankedEntry], tier: str | None) -> tuple[int, int]:
+    """Return (lo, hi) position range for the tier.
+
+    When there are existing same-tier movies, returns the contiguous slice they
+    occupy so comparisons stay strictly within that tier.
+
+    When the tier has no existing members, returns a single-point band (x, x)
+    so the caller inserts at position x without asking any comparison questions.
+    Tiers are ALWAYS isolated — a "liked" movie is never shown against a
+    "loved" movie, even during the first placement.
+    """
+    n = len(ranked)
+    if not tier or n == 0:
+        return 0, n
+
+    same = [i for i, e in enumerate(ranked) if e.tier == tier]
+    if same:
+        return same[0], same[-1] + 1
+
+    my_order = _TIER_ORDER.get(tier, 1)
+
+    # Find adjacent tiers to locate the insertion boundary.
+    lower = [i for i, e in enumerate(ranked)
+             if e.tier is not None and _TIER_ORDER.get(e.tier, 1) < my_order]
+    higher = [i for i, e in enumerate(ranked)
+              if e.tier is not None and _TIER_ORDER.get(e.tier, 1) > my_order]
+
+    if lower or higher:
+        insert_at = (max(lower) + 1) if lower else min(higher)
+        return insert_at, insert_at
+
+    # No tier data exists at all (e.g., all legacy null-tier movies, or empty
+    # list). Place at a sensible default — no comparison needed.
+    slot = _TIER_DEFAULT_INSERT.get(tier, "middle")
+    if slot == "start":
+        insert_at = 0
+    elif slot == "end":
+        insert_at = n
+    else:
+        insert_at = n // 2
+    return insert_at, insert_at
+
+
 # --------------------------------------------------------------------------
 # Public API
 # --------------------------------------------------------------------------
-def start_placement(movie_id: int, genres: list[str]) -> dict:
+def start_placement(movie_id: int, genres: list[str], tier: str | None = None) -> dict:
     """Begin placing `movie_id`. Returns either a comparison or an immediate done."""
     ranked = _load_ranked()
 
@@ -94,25 +149,34 @@ def start_placement(movie_id: int, genres: list[str]) -> dict:
         movie_id=movie_id,
         movie_genres=frozenset(genres or []),
         ranked=ranked,
+        tier_str=tier,
     )
 
     # Empty list: straight to the top, no questions.
     if not ranked:
         return _finalize(p, 0)
 
-    # Set up phase 1 over the same-genre sublist (falls through to phase 2 if none).
+    t_lo, t_hi = _tier_band(ranked, tier)
+    p.tier_lo, p.tier_hi = t_lo, t_hi
+
+    # No existing movies in this tier — slot in at the boundary without comparison.
+    if t_lo >= t_hi:
+        return _finalize(p, t_lo)
+
+    # Phase 1: binary-search only same-tier, same-genre movies.
     p.genre_positions = [
-        i for i, e in enumerate(ranked) if e.genres & p.movie_genres
+        i for i, e in enumerate(ranked)
+        if e.genres & p.movie_genres and e.tier == tier
     ]
     if p.genre_positions:
         p.phase = 1
         p.lo, p.hi = 0, len(p.genre_positions)
-        p.estimated_total = _est(len(p.genre_positions)) + _est(len(ranked))
+        p.estimated_total = _est(len(p.genre_positions)) + _est(t_hi - t_lo)
     else:
         p.phase = 2
-        p.band_lo, p.band_hi = 0, len(ranked)
-        p.lo, p.hi = 0, len(ranked)
-        p.estimated_total = _est(len(ranked))
+        p.band_lo, p.band_hi = t_lo, t_hi
+        p.lo, p.hi = t_lo, t_hi
+        p.estimated_total = _est(t_hi - t_lo)
 
     _PLACEMENTS[p.id] = p
     return _next_comparison(p)
@@ -191,6 +255,11 @@ def _begin_phase_two(p: Placement) -> dict:
     lower = p.genre_positions[g - 1] + 1 if g > 0 else 0
     upper = p.genre_positions[g] if g < len(p.genre_positions) else len(p.ranked)
 
+    # Clip the genre-derived band to the tier band.
+    if p.tier_hi > p.tier_lo:
+        lower = max(lower, p.tier_lo)
+        upper = min(upper, p.tier_hi)
+
     p.phase = 2
     p.band_lo, p.band_hi = lower, upper
     p.lo, p.hi = lower, upper
@@ -208,7 +277,7 @@ def _finalize(p: Placement, insert_at: int) -> dict:
         rows = s.execute(select(Ranking).order_by(Ranking.position.asc())).scalars().all()
         insert_at = max(0, min(insert_at, len(rows)))
 
-        s.add(Ranking(movie_id=p.movie_id, position=insert_at, score=0.0))
+        s.add(Ranking(movie_id=p.movie_id, position=insert_at, score=0.0, tier=p.tier_str))
         # A ranked movie is no longer "want to watch".
         s.execute(delete(Watchlist).where(Watchlist.movie_id == p.movie_id))
         s.flush()  # make the new row visible to _renumber's re-query
@@ -224,6 +293,7 @@ def _finalize(p: Placement, insert_at: int) -> dict:
         "movie_id": p.movie_id,
         "position": insert_at,
         "score": score_for(insert_at, len(p.ranked) + 1),
+        "tier": p.tier_str,
         "comparisons": p.comparisons_done,
         "list": get_rankings(),
     }
@@ -264,6 +334,7 @@ def get_rankings() -> list[dict]:
             d["rank"] = ranking.position + 1
             d["score"] = ranking.score
             d["note"] = ranking.notes
+            d["tier"] = ranking.tier
             out.append(d)
         return out
 
@@ -280,6 +351,22 @@ def set_note(movie_id: int, notes: str | None) -> dict | None:
             return None
         row.notes = cleaned
     return {"movie_id": movie_id, "note": cleaned}
+
+
+def reorder_rankings(ordered_ids: list[int]) -> list[dict]:
+    """Reorder the ranked list to the given sequence of movie IDs."""
+    with session_scope() as s:
+        existing = {
+            r.movie_id for r in s.execute(select(Ranking)).scalars().all()
+        }
+        valid = [mid for mid in ordered_ids if mid in existing]
+        # Append any ranked movies omitted from the provided list (safety net)
+        seen = set(valid)
+        for mid in existing:
+            if mid not in seen:
+                valid.append(mid)
+        _renumber(s, valid)
+    return get_rankings()
 
 
 def remove_ranking(movie_id: int) -> list[dict]:

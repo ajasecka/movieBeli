@@ -91,6 +91,7 @@ class Ranking(Base):
     position = Column(Integer, nullable=False)
     score = Column(Float, nullable=False, default=0.0)
     notes = Column(Text)  # your personal note about this movie
+    tier = Column(String(20))  # "loved" | "liked" | "disliked"
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
 

@@ -23,13 +23,15 @@
     <!-- Top bar -->
     <header class="topbar">
       <h1 class="brand">movie<span>Beli</span></h1>
-      <div id="index-status" class="index-status" title="Local movie index"></div>
+      <div class="topbar-right">
+        <div id="index-status" class="index-status" title="Local movie index"></div>
+        <button id="add-btn" class="add-btn" title="Add a movie">+</button>
+      </div>
     </header>
 
     <!-- Views -->
     <main id="view-rankings" class="view active"></main>
     <main id="view-watchlist" class="view"></main>
-    <main id="view-search" class="view"></main>
 
     <!-- Bottom navigation -->
     <nav class="tabbar">
@@ -40,10 +42,6 @@
       <button class="tab" data-view="watchlist">
         <span class="tab-icon">🔖</span>
         <span class="tab-label">Watchlist</span>
-      </button>
-      <button class="tab" data-view="search">
-        <span class="tab-icon">+</span>
-        <span class="tab-label">Add</span>
       </button>
     </nav>
   </div>

@@ -2,7 +2,7 @@ import { api } from "./api.js";
 
 // ---------- State ----------
 let IMAGE_BASE = "https://image.tmdb.org/t/p";
-const state = { view: "rankings", rankings: [], searchTimer: null };
+const state = { view: "rankings", rankings: [], watchlist: [] };
 
 // ---------- Helpers ----------
 const $ = (sel) => document.querySelector(sel);
@@ -24,8 +24,11 @@ function posterHtml(movie, size = "w342", cls = "poster") {
   return `<div class="${cls}">🎬</div>`;
 }
 
-// Score color scale: green (high) -> amber -> red (low).
-function scoreColor(score) {
+function scoreColor(score, tier) {
+  if (tier === "loved")    return "#16a34a";  // green
+  if (tier === "liked")    return "#ca8a04";  // amber
+  if (tier === "disliked") return "#dc2626";  // red
+  // Gradient fallback for legacy movies without a stored tier.
   const hue = Math.max(0, Math.min(120, (score / 10) * 120));
   return `hsl(${hue}, 62%, 42%)`;
 }
@@ -73,15 +76,13 @@ function switchView(name) {
     t.classList.toggle("active", t.dataset.view === name)
   );
   if (name === "rankings") renderRankings();
-  if (name === "watchlist") renderWatchlist();
+  else if (name === "watchlist") renderWatchlist();
 }
 
 // Re-render whatever list-bearing view is active (after add/remove/rank).
 function refreshAfterListChange() {
   if (state.view === "watchlist") renderWatchlist();
   if (state.view === "rankings") renderRankings();
-  const si = $("#search-input");
-  if (si && si.value.trim()) doSearch(si.value);
 }
 
 async function renderRankings() {
@@ -98,13 +99,36 @@ async function renderRankings() {
           <p>Search for a film you've seen and place it<br/>against the ones you already love.</p>
           <button class="cta" id="empty-add">Add your first movie</button>
         </div>`;
-      $("#empty-add").onclick = () => switchView("search");
+      $("#empty-add").onclick = () => openAddOverlay();
       return;
     }
-    root.innerHTML = `<div class="section-title">Your rankings · ${rankings.length}</div>
-      <div class="rank-list"></div>`;
-    const list = root.querySelector(".rank-list");
-    rankings.forEach((m) => list.appendChild(rankCard(m)));
+    root.innerHTML = `
+      <div class="list-filter-wrap">
+        <input class="list-filter" id="rankings-filter" type="search" placeholder="Filter rankings…" autocomplete="off" />
+      </div>
+      <div class="section-title" id="rankings-title">Your rankings · ${rankings.length}</div>
+      <div class="rank-list" id="rankings-list"></div>`;
+    const list = root.querySelector("#rankings-list");
+    const filterInput = root.querySelector("#rankings-filter");
+    const titleEl = root.querySelector("#rankings-title");
+
+    const applyFilter = (q) => {
+      const filtered = q
+        ? rankings.filter((m) =>
+            m.title.toLowerCase().includes(q.toLowerCase()) ||
+            (m.director && m.director.toLowerCase().includes(q.toLowerCase()))
+          )
+        : rankings;
+      titleEl.textContent = q
+        ? `${filtered.length} of ${rankings.length} match${filtered.length === 1 ? "" : "es"}`
+        : `Your rankings · ${rankings.length}`;
+      list.innerHTML = "";
+      filtered.forEach((m) => list.appendChild(rankCard(m)));
+      if (!q) enableDragAndDrop(list);
+    };
+
+    applyFilter("");
+    filterInput.addEventListener("input", () => applyFilter(filterInput.value.trim()));
   } catch (e) {
     root.innerHTML = `<div class="hint">Couldn't load rankings.<br/>${esc(e.message)}</div>`;
   }
@@ -113,7 +137,8 @@ async function renderRankings() {
 function rankCard(m) {
   const sub = [m.release_year, m.director].filter(Boolean).join(" · ");
   const card = el(`
-    <div class="rank-card">
+    <div class="rank-card" draggable="true" data-movie-id="${m.id}">
+      <div class="drag-handle" title="Drag to reorder">⠿</div>
       <div class="rank-num">${m.rank}</div>
       ${posterHtml(m, "w185")}
       <div class="rank-meta">
@@ -122,11 +147,145 @@ function rankCard(m) {
         ${genreChips(m.genres)}
         ${m.note ? `<div class="note-line">📝 ${esc(m.note)}</div>` : ""}
       </div>
-      <div class="score" style="background:${scoreColor(m.score)}">${m.score.toFixed(1)}</div>
+      <div class="score" style="background:${scoreColor(m.score, m.tier)}">${m.score.toFixed(1)}</div>
     </div>`);
-  // Tap a card to view / edit its note or remove it.
   card.addEventListener("click", () => openDetail(m));
   return card;
+}
+
+// ---------- Drag-and-drop reordering ----------
+function clearDropIndicators(list) {
+  list.querySelectorAll(".drag-over-top, .drag-over-bottom").forEach((c) => {
+    c.classList.remove("drag-over-top", "drag-over-bottom");
+  });
+}
+
+async function performDrop(list, dragSrc, target, clientY) {
+  clearDropIndicators(list);
+  const rect = target.getBoundingClientRect();
+  if (clientY < rect.top + rect.height / 2) {
+    list.insertBefore(dragSrc, target);
+  } else {
+    list.insertBefore(dragSrc, target.nextSibling);
+  }
+  // Update rank numbers immediately so the list feels snappy.
+  [...list.querySelectorAll(".rank-card")].forEach((c, i) => {
+    c.querySelector(".rank-num").textContent = i + 1;
+  });
+  const orderedIds = [...list.querySelectorAll(".rank-card")].map((c) =>
+    parseInt(c.dataset.movieId)
+  );
+  try {
+    const { rankings } = await api.reorder(orderedIds);
+    // Patch scores in-place without a full re-render.
+    rankings.forEach((m) => {
+      const c = list.querySelector(`[data-movie-id="${m.id}"]`);
+      if (!c) return;
+      const scoreEl = c.querySelector(".score");
+      scoreEl.style.background = scoreColor(m.score, m.tier);
+      scoreEl.textContent = m.score.toFixed(1);
+    });
+    state.rankings = rankings;
+  } catch (_) {
+    toast("Failed to save new order");
+    renderRankings();
+  }
+}
+
+function enableDragAndDrop(list) {
+  let dragSrc = null;
+
+  // --- HTML5 drag (desktop/Chrome-Android) ---
+  list.querySelectorAll(".rank-card").forEach((card) => {
+    card.addEventListener("dragstart", (e) => {
+      dragSrc = card;
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", card.dataset.movieId);
+      requestAnimationFrame(() => card.classList.add("dragging"));
+    });
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      clearDropIndicators(list);
+      dragSrc = null;
+    });
+  });
+
+  list.addEventListener("dragover", (e) => {
+    const target = e.target.closest(".rank-card");
+    if (!target || target === dragSrc) return;
+    e.preventDefault();
+    clearDropIndicators(list);
+    const rect = target.getBoundingClientRect();
+    target.classList.add(
+      e.clientY < rect.top + rect.height / 2 ? "drag-over-top" : "drag-over-bottom"
+    );
+  });
+
+  list.addEventListener("dragleave", (e) => {
+    if (!list.contains(e.relatedTarget)) clearDropIndicators(list);
+  });
+
+  list.addEventListener("drop", async (e) => {
+    const target = e.target.closest(".rank-card");
+    if (!target || !dragSrc || target === dragSrc) return;
+    e.preventDefault();
+    await performDrop(list, dragSrc, target, e.clientY);
+  });
+
+  // --- Touch drag (iOS/mobile) ---
+  let touchSrc = null;
+  let touchStartY = 0;
+  let touchTimer = null;
+  let touchActive = false;
+
+  list.addEventListener("touchstart", (e) => {
+    if (!e.target.closest(".drag-handle")) return;
+    const card = e.target.closest(".rank-card");
+    touchSrc = card;
+    touchStartY = e.touches[0].clientY;
+    touchActive = false;
+    touchTimer = setTimeout(() => {
+      touchActive = true;
+      card.classList.add("dragging");
+    }, 200);
+  }, { passive: true });
+
+  list.addEventListener("touchmove", (e) => {
+    if (!touchSrc) return;
+    const dy = Math.abs(e.touches[0].clientY - touchStartY);
+    if (!touchActive) {
+      if (dy > 8) { clearTimeout(touchTimer); touchSrc = null; }
+      return;
+    }
+    e.preventDefault();
+    const y = e.touches[0].clientY;
+    clearDropIndicators(list);
+    const target = [...list.querySelectorAll(".rank-card")].find((c) => {
+      if (c === touchSrc) return false;
+      const r = c.getBoundingClientRect();
+      return y >= r.top && y <= r.bottom;
+    });
+    if (target) {
+      const r = target.getBoundingClientRect();
+      target.classList.add(y < r.top + r.height / 2 ? "drag-over-top" : "drag-over-bottom");
+    }
+  }, { passive: false });
+
+  list.addEventListener("touchend", async (e) => {
+    clearTimeout(touchTimer);
+    if (!touchSrc || !touchActive) { touchSrc = null; touchActive = false; return; }
+    const y = e.changedTouches[0].clientY;
+    const target = [...list.querySelectorAll(".rank-card")].find((c) => {
+      if (c === touchSrc) return false;
+      const r = c.getBoundingClientRect();
+      return y >= r.top && y <= r.bottom;
+    });
+    touchSrc.classList.remove("dragging");
+    if (target) await performDrop(list, touchSrc, target, y);
+    else clearDropIndicators(list);
+    touchSrc = null;
+    touchActive = false;
+  }, { passive: true });
 }
 
 // ---------- Watchlist ----------
@@ -135,6 +294,7 @@ async function renderWatchlist() {
   root.innerHTML = `<div class="spinner"></div>`;
   try {
     const { watchlist } = await api.watchlist();
+    state.watchlist = watchlist;
     if (!watchlist.length) {
       root.innerHTML = `
         <div class="empty">
@@ -143,13 +303,35 @@ async function renderWatchlist() {
           <p>Save movies you want to see. When you've<br/>watched one, rank it from here.</p>
           <button class="cta" id="empty-wl-add">Find something to watch</button>
         </div>`;
-      $("#empty-wl-add").onclick = () => switchView("search");
+      $("#empty-wl-add").onclick = () => openAddOverlay();
       return;
     }
-    root.innerHTML = `<div class="section-title">Want to watch · ${watchlist.length}</div>
-      <div class="rank-list"></div>`;
-    const list = root.querySelector(".rank-list");
-    watchlist.forEach((m) => list.appendChild(watchCard(m)));
+    root.innerHTML = `
+      <div class="list-filter-wrap">
+        <input class="list-filter" id="watchlist-filter" type="search" placeholder="Filter watchlist…" autocomplete="off" />
+      </div>
+      <div class="section-title" id="watchlist-title">Want to watch · ${watchlist.length}</div>
+      <div class="rank-list" id="watchlist-list"></div>`;
+    const list = root.querySelector("#watchlist-list");
+    const filterInput = root.querySelector("#watchlist-filter");
+    const titleEl = root.querySelector("#watchlist-title");
+
+    const applyFilter = (q) => {
+      const filtered = q
+        ? watchlist.filter((m) =>
+            m.title.toLowerCase().includes(q.toLowerCase()) ||
+            (m.director && m.director.toLowerCase().includes(q.toLowerCase()))
+          )
+        : watchlist;
+      titleEl.textContent = q
+        ? `${filtered.length} of ${watchlist.length} match${filtered.length === 1 ? "" : "es"}`
+        : `Want to watch · ${watchlist.length}`;
+      list.innerHTML = "";
+      filtered.forEach((m) => list.appendChild(watchCard(m)));
+    };
+
+    applyFilter("");
+    filterInput.addEventListener("input", () => applyFilter(filterInput.value.trim()));
   } catch (e) {
     root.innerHTML = `<div class="hint">Couldn't load watchlist.<br/>${esc(e.message)}</div>`;
   }
@@ -227,7 +409,7 @@ function openDetail(m) {
           <div class="year">${[m.release_year, m.director, runtimeText(m.runtime)].filter(Boolean).map(esc).join(" · ")}</div>
           <div class="rating-row">
             <div class="your-rank">
-              <span class="mini-score" style="background:${scoreColor(m.score)}">${m.score.toFixed(1)}</span>
+              <span class="mini-score" style="background:${scoreColor(m.score, m.tier)}">${m.score.toFixed(1)}</span>
               <span class="rank-hash">Your #${m.rank}</span>
             </div>
             ${ratingHtml(m)}
@@ -264,70 +446,83 @@ function openDetail(m) {
   };
 }
 
-// ---------- Search ----------
-function renderSearchShell() {
-  const root = $("#view-search");
+// ---------- Add-movie overlay ----------
+function openAddOverlay() {
+  const root = $("#overlay-root");
   root.innerHTML = `
-    <div class="search-wrap">
-      <input class="search-input" id="search-input" type="search"
-             placeholder="Search a movie you've seen…" autocomplete="off" />
-    </div>
-    <div class="result-list" id="result-list"></div>
-    <div class="hint" id="search-hint">Type a title to get started.</div>`;
-  const input = $("#search-input");
+    <div class="overlay">
+      <div class="add-overlay-head">
+        <input class="add-search-input" id="add-search-input" type="search"
+               placeholder="Search a movie…" autocomplete="off" />
+        <button class="close">✕</button>
+      </div>
+      <div class="overlay-body" style="padding-top: 8px;">
+        <div class="result-list" id="add-result-list"></div>
+        <div class="hint" id="add-search-hint">Type a title to get started.</div>
+      </div>
+    </div>`;
+  root.querySelector(".close").onclick = closeOverlay;
+  const input = root.querySelector("#add-search-input");
+  const listEl = root.querySelector("#add-result-list");
+  const hintEl = root.querySelector("#add-search-hint");
+  let timer = null;
   input.addEventListener("input", () => {
-    clearTimeout(state.searchTimer);
-    state.searchTimer = setTimeout(() => doSearch(input.value), 220);
+    clearTimeout(timer);
+    timer = setTimeout(() => _doSearch(input.value, listEl, hintEl), 220);
   });
+  requestAnimationFrame(() => input.focus());
 }
 
-async function doSearch(q) {
-  const listEl = $("#result-list");
-  const hint = $("#search-hint");
+async function _doSearch(q, listEl, hintEl) {
   q = q.trim();
-  if (!q) { listEl.innerHTML = ""; hint.style.display = "block"; hint.textContent = "Type a title to get started."; return; }
-  hint.style.display = "none";
+  if (!q) {
+    listEl.innerHTML = "";
+    hintEl.style.display = "block";
+    hintEl.textContent = "Type a title to get started.";
+    return;
+  }
+  hintEl.style.display = "none";
   try {
     const { results } = await api.search(q);
     if (!results.length) {
       listEl.innerHTML = "";
-      hint.style.display = "block";
-      hint.textContent = `No matches for "${q}".`;
+      hintEl.style.display = "block";
+      hintEl.textContent = `No matches for "${q}".`;
       return;
     }
     listEl.innerHTML = "";
+    const preferWatchlist = state.view === "watchlist";
     results.forEach((r) => {
       let right;
       if (r.already_ranked) {
         right = `<div class="result-rank">
-             <span class="mini-score" style="background:${scoreColor(r.score)}">${r.score.toFixed(1)}</span>
+             <span class="mini-score" style="background:${scoreColor(r.score, r.tier)}">${r.score.toFixed(1)}</span>
              <span class="rank-hash">#${r.rank}</span>
            </div>`;
       } else if (r.in_watchlist) {
         right = `<div class="go wl">🔖 Watchlist</div>`;
       } else {
-        right = `<div class="go">Add →</div>`;
+        right = `<div class="go">${preferWatchlist ? "🔖 Save" : "Add →"}</div>`;
       }
       const row = el(`
         <div class="result-row ${r.already_ranked ? "ranked" : ""}">
           <div class="result-title">${esc(r.title)}</div>
           ${right}
         </div>`);
-      // Ranked -> its detail; otherwise the preview (watchlist-aware).
       row.onclick = () =>
-        r.already_ranked ? openRankedDetail(r.id) : openPreview(r.id, r.in_watchlist);
+        r.already_ranked ? openRankedDetail(r.id) : openPreview(r.id, r.in_watchlist, preferWatchlist);
       listEl.appendChild(row);
     });
   } catch (e) {
-    hint.style.display = "block";
-    hint.textContent = e.message;
+    hintEl.style.display = "block";
+    hintEl.textContent = e.message;
   }
 }
 
 // ---------- Overlays ----------
 function closeOverlay() { $("#overlay-root").innerHTML = ""; }
 
-async function openPreview(movieId, inWatchlist = false) {
+async function openPreview(movieId, inWatchlist = false, preferWatchlist = false) {
   const root = $("#overlay-root");
   root.innerHTML = `<div class="overlay"><div class="overlay-head">
       <button class="close">✕</button></div>
@@ -335,12 +530,18 @@ async function openPreview(movieId, inWatchlist = false) {
   root.querySelector(".close").onclick = closeOverlay;
   try {
     const { movie } = await api.movie(movieId);
-    // In watchlist -> Rank it / Remove. Otherwise -> Add & Rank / Add to Watchlist.
-    const actions = inWatchlist
-      ? `<button class="btn-primary" id="start-rank">I watched it — Rank it</button>
-         <button class="btn-danger" id="wl-remove">Remove from watchlist</button>`
-      : `<button class="btn-primary" id="start-rank">Add &amp; Rank</button>
-         <button class="btn-secondary" id="wl-add">🔖 Add to Watchlist</button>`;
+    // In watchlist -> Rank it / Remove. Otherwise order buttons by context.
+    let actions;
+    if (inWatchlist) {
+      actions = `<button class="btn-primary" id="start-rank">I watched it — Rank it</button>
+                 <button class="btn-danger" id="wl-remove">Remove from watchlist</button>`;
+    } else if (preferWatchlist) {
+      actions = `<button class="btn-primary" id="wl-add">🔖 Add to Watchlist</button>
+                 <button class="btn-secondary" id="start-rank">Add &amp; Rank</button>`;
+    } else {
+      actions = `<button class="btn-primary" id="start-rank">Add &amp; Rank</button>
+                 <button class="btn-secondary" id="wl-add">🔖 Add to Watchlist</button>`;
+    }
     const body = root.querySelector(".overlay-body");
     body.innerHTML = `
       <div class="preview">
@@ -362,9 +563,55 @@ async function openPreview(movieId, inWatchlist = false) {
   }
 }
 
-async function startRanking(movie) {
+function startRanking(movie) {
+  renderTierSelection(movie);
+}
+
+function renderTierSelection(movie) {
+  const root = $("#overlay-root");
+  root.innerHTML = `
+    <div class="overlay">
+      <div class="overlay-head"><button class="close">✕</button></div>
+      <div class="overlay-body">
+        <div class="tier-screen">
+          ${posterHtml(movie, "w342", "poster lg")}
+          <h2>${esc(movie.title)}</h2>
+          <p class="tier-q">How did you feel about it?</p>
+          <div class="tier-options">
+            <button class="tier-btn" data-tier="loved">
+              <span class="tier-icon">❤️</span>
+              <div class="tier-text">
+                <span class="tier-label">Loved it</span>
+                <span class="tier-sub">One of my favourites</span>
+              </div>
+            </button>
+            <button class="tier-btn" data-tier="liked">
+              <span class="tier-icon">👍</span>
+              <div class="tier-text">
+                <span class="tier-label">Liked it</span>
+                <span class="tier-sub">Solid, worth watching</span>
+              </div>
+            </button>
+            <button class="tier-btn" data-tier="disliked">
+              <span class="tier-icon">👎</span>
+              <div class="tier-text">
+                <span class="tier-label">Didn't like it</span>
+                <span class="tier-sub">Not for me</span>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  root.querySelector(".close").onclick = closeOverlay;
+  root.querySelectorAll(".tier-btn").forEach((btn) => {
+    btn.onclick = () => startRankingWithTier(movie, btn.dataset.tier);
+  });
+}
+
+async function startRankingWithTier(movie, tier) {
   try {
-    const first = await api.startRanking(movie.id);
+    const first = await api.startRanking(movie.id, tier);
     if (first.done) return finishPlacement(first, movie);
     renderComparison(first, movie);
   } catch (e) {
@@ -462,7 +709,7 @@ function renderNotePrompt(result, movie) {
         <div class="preview">
           <div class="placed-wrap">
             ${posterHtml(movie, "w342", "poster lg")}
-            <div class="placed-badge" style="background:${scoreColor(result.score)}">${result.score.toFixed(1)}</div>
+            <div class="placed-badge" style="background:${scoreColor(result.score, result.tier)}">${result.score.toFixed(1)}</div>
           </div>
           <h2>${esc(movie.title)}</h2>
           <div class="year">Ranked #${result.position + 1} in your list</div>
@@ -510,7 +757,7 @@ function init() {
   document.querySelectorAll(".tab").forEach((t) => {
     t.onclick = () => switchView(t.dataset.view);
   });
-  renderSearchShell();
+  $("#add-btn").onclick = () => openAddOverlay();
   renderRankings();
   loadStatus();
   setInterval(loadStatus, 30000);

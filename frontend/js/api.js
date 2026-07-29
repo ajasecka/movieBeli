@@ -18,14 +18,16 @@ export const api = {
   search: (q) => req(`/api/search?q=${encodeURIComponent(q)}`),
   movie: (id) => req(`/api/movies/${id}`),
   rankings: () => req("/api/rankings"),
-  startRanking: (movieId) =>
-    req("/api/rankings/start", { method: "POST", body: JSON.stringify({ movie_id: movieId }) }),
+  startRanking: (movieId, tier) =>
+    req("/api/rankings/start", { method: "POST", body: JSON.stringify({ movie_id: movieId, tier: tier ?? null }) }),
   compare: (placementId, preferNew) =>
     req("/api/rankings/compare", {
       method: "POST",
       body: JSON.stringify({ placement_id: placementId, prefer_new: preferNew }),
     }),
   remove: (movieId) => req(`/api/rankings/${movieId}`, { method: "DELETE" }),
+  reorder: (orderedIds) =>
+    req("/api/rankings/reorder", { method: "POST", body: JSON.stringify({ ordered_ids: orderedIds }) }),
   setNote: (movieId, notes) =>
     req(`/api/rankings/${movieId}/note`, { method: "PUT", body: JSON.stringify({ notes }) }),
   watchlist: () => req("/api/watchlist"),

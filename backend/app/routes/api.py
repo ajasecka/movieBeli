@@ -41,7 +41,7 @@ def search(q: str = Query(..., min_length=1), limit: int = 20):
         rows = s.execute(sql, params).all()
         # movie_id -> (position, score) for anything already in your rankings
         ranked = {
-            r.movie_id: (r.position, r.score)
+            r.movie_id: (r.position, r.score, r.tier)
             for r in s.execute(select(Ranking)).scalars().all()
         }
         watchlisted = set(s.execute(select(Watchlist.movie_id)).scalars().all())
@@ -56,9 +56,10 @@ def search(q: str = Query(..., min_length=1), limit: int = 20):
             "in_watchlist": r.id in watchlisted,
         }
         if r.id in ranked:
-            position, score = ranked[r.id]
+            position, score, tier = ranked[r.id]
             item["rank"] = position + 1
             item["score"] = score
+            item["tier"] = tier
         results.append(item)
     return {"results": results}
 
@@ -104,6 +105,7 @@ def _get_or_fetch_movie(movie_id: int) -> dict:
 # --------------------------------------------------------------------------
 class StartBody(BaseModel):
     movie_id: int
+    tier: str | None = None  # "loved" | "liked" | "disliked"
 
 
 class CompareBody(BaseModel):
@@ -115,6 +117,10 @@ class NoteBody(BaseModel):
     notes: str | None = None
 
 
+class ReorderBody(BaseModel):
+    ordered_ids: list[int]
+
+
 @router.get("/rankings")
 def list_rankings():
     return {"rankings": ranking.get_rankings()}
@@ -123,7 +129,7 @@ def list_rankings():
 @router.post("/rankings/start")
 def start_ranking(body: StartBody):
     movie = _get_or_fetch_movie(body.movie_id)  # ensures details are cached
-    result = ranking.start_placement(body.movie_id, movie.get("genres") or [])
+    result = ranking.start_placement(body.movie_id, movie.get("genres") or [], body.tier)
     return result
 
 
@@ -133,6 +139,11 @@ def compare(body: CompareBody):
         return ranking.submit_comparison(body.placement_id, body.prefer_new)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/rankings/reorder")
+def reorder_rankings(body: ReorderBody):
+    return {"rankings": ranking.reorder_rankings(body.ordered_ids)}
 
 
 @router.put("/rankings/{movie_id}/note")

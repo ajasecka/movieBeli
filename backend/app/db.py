@@ -51,3 +51,4 @@ def init_db() -> None:
         # Idempotent adds for databases created before these columns existed.
         conn.execute(text("ALTER TABLE ranking ADD COLUMN IF NOT EXISTS notes text"))
         conn.execute(text("ALTER TABLE movie ADD COLUMN IF NOT EXISTS vote_count integer"))
+        conn.execute(text("ALTER TABLE ranking ADD COLUMN IF NOT EXISTS tier varchar(20)"))
