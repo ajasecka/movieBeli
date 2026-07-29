@@ -353,19 +353,30 @@ def set_note(movie_id: int, notes: str | None) -> dict | None:
     return {"movie_id": movie_id, "note": cleaned}
 
 
-def reorder_rankings(ordered_ids: list[int]) -> list[dict]:
-    """Reorder the ranked list to the given sequence of movie IDs."""
+_VALID_TIERS = {"loved", "liked", "disliked"}
+
+
+def reorder_rankings(
+    ordered_ids: list[int],
+    tier_updates: dict[str, str] | None = None,
+) -> list[dict]:
+    """Reorder the ranked list; optionally change tiers for specific movies."""
     with session_scope() as s:
-        existing = {
-            r.movie_id for r in s.execute(select(Ranking)).scalars().all()
-        }
-        valid = [mid for mid in ordered_ids if mid in existing]
-        # Append any ranked movies omitted from the provided list (safety net)
+        rows = {r.movie_id: r for r in s.execute(select(Ranking)).scalars().all()}
+        valid = [mid for mid in ordered_ids if mid in rows]
         seen = set(valid)
-        for mid in existing:
+        for mid in rows:
             if mid not in seen:
                 valid.append(mid)
         _renumber(s, valid)
+        if tier_updates:
+            for id_str, new_tier in tier_updates.items():
+                try:
+                    mid = int(id_str)
+                except (ValueError, TypeError):
+                    continue
+                if mid in rows and new_tier in _VALID_TIERS:
+                    rows[mid].tier = new_tier
     return get_rankings()
 
 

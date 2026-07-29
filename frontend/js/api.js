@@ -26,8 +26,11 @@ export const api = {
       body: JSON.stringify({ placement_id: placementId, prefer_new: preferNew }),
     }),
   remove: (movieId) => req(`/api/rankings/${movieId}`, { method: "DELETE" }),
-  reorder: (orderedIds) =>
-    req("/api/rankings/reorder", { method: "POST", body: JSON.stringify({ ordered_ids: orderedIds }) }),
+  reorder: (orderedIds, tierUpdates = {}) =>
+    req("/api/rankings/reorder", {
+      method: "POST",
+      body: JSON.stringify({ ordered_ids: orderedIds, tier_updates: tierUpdates }),
+    }),
   setNote: (movieId, notes) =>
     req(`/api/rankings/${movieId}/note`, { method: "PUT", body: JSON.stringify({ notes }) }),
   watchlist: () => req("/api/watchlist"),

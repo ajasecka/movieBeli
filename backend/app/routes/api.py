@@ -119,6 +119,7 @@ class NoteBody(BaseModel):
 
 class ReorderBody(BaseModel):
     ordered_ids: list[int]
+    tier_updates: dict[str, str] | None = None  # movie_id (str) -> "loved"|"liked"|"disliked"
 
 
 @router.get("/rankings")
@@ -143,7 +144,7 @@ def compare(body: CompareBody):
 
 @router.post("/rankings/reorder")
 def reorder_rankings(body: ReorderBody):
-    return {"rankings": ranking.reorder_rankings(body.ordered_ids)}
+    return {"rankings": ranking.reorder_rankings(body.ordered_ids, body.tier_updates)}
 
 
 @router.put("/rankings/{movie_id}/note")

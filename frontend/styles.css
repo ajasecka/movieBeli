@@ -154,6 +154,11 @@ body {
 .result-row:active { background: var(--surface-2); }
 .result-title { font-weight: 600; font-size: 15px; }
 .result-row .go { margin-left: auto; color: var(--accent); font-weight: 700; }
+.mini-score {
+  display: inline-grid; place-items: center; vertical-align: middle;
+  min-width: 36px; height: 27px; padding: 0 7px; border-radius: 8px;
+  color: #fff; font-weight: 800; font-size: 13px;
+}
 .result-rank { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .result-rank .mini-score {
   min-width: 34px; height: 26px; padding: 0 6px; border-radius: 8px; color: #fff;
@@ -255,15 +260,6 @@ body {
   color: var(--text); outline: none; resize: vertical; font-family: inherit;
 }
 .note-input:focus { border-color: var(--accent); }
-
-/* placed badge on the note prompt */
-.placed-wrap { position: relative; width: 132px; margin: 0 auto 16px; }
-.placed-wrap .poster.lg { margin: 0; }
-.placed-badge {
-  position: absolute; right: -10px; bottom: -10px; min-width: 44px; height: 44px; padding: 0 8px;
-  border-radius: 12px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 16px;
-  box-shadow: var(--shadow); border: 2px solid var(--bg);
-}
 
 /* show-notes on the compare screen */
 .show-notes-btn {

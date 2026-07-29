@@ -175,9 +175,18 @@ async function performDrop(list, dragSrc, target, clientY) {
   const orderedIds = [...list.querySelectorAll(".rank-card")].map((c) =>
     parseInt(c.dataset.movieId)
   );
+
+  // If the movie crossed into a different tier, adopt the target's tier.
+  const draggedId = parseInt(dragSrc.dataset.movieId);
+  const targetId = parseInt(target.dataset.movieId);
+  const tierById = Object.fromEntries(state.rankings.map((m) => [m.id, m.tier]));
+  const oldTier = tierById[draggedId] ?? null;
+  const newTier = tierById[targetId] ?? null;
+  const tierUpdates = newTier && newTier !== oldTier ? { [draggedId]: newTier } : {};
+
   try {
-    const { rankings } = await api.reorder(orderedIds);
-    // Patch scores in-place without a full re-render.
+    const { rankings } = await api.reorder(orderedIds, tierUpdates);
+    // Patch scores and tier colors in-place without a full re-render.
     rankings.forEach((m) => {
       const c = list.querySelector(`[data-movie-id="${m.id}"]`);
       if (!c) return;
@@ -704,32 +713,34 @@ function renderNotePrompt(result, movie) {
   const root = $("#overlay-root");
   root.innerHTML = `
     <div class="overlay">
-      <div class="overlay-head"><button class="close">Skip</button></div>
+      <div class="overlay-head"><button class="close">×</button></div>
       <div class="overlay-body">
         <div class="preview">
-          <div class="placed-wrap">
-            ${posterHtml(movie, "w342", "poster lg")}
-            <div class="placed-badge" style="background:${scoreColor(result.score, result.tier)}">${result.score.toFixed(1)}</div>
-          </div>
+          ${posterHtml(movie, "w342", "poster lg")}
           <h2>${esc(movie.title)}</h2>
-          <div class="year">Ranked #${result.position + 1} in your list</div>
+          <div class="year">
+            <span class="mini-score" style="background:${scoreColor(result.score, result.tier)}">${result.score.toFixed(1)}</span>
+            Ranked #${result.position + 1} in your list
+          </div>
           <div class="note-editor">
             <label class="note-label">Add a note <span>(optional)</span></label>
             <textarea class="note-input" id="note-input" placeholder="What stuck with you?"></textarea>
-            <button class="btn-primary" id="save-note">Save note</button>
-            <button class="btn-text" id="skip-note">Skip for now</button>
+            <button class="btn-primary" id="save-note">Continue</button>
           </div>
         </div>
       </div>
     </div>`;
-  const done = (msg) => { closeOverlay(); if (msg) toast(msg); switchView("rankings"); };
-  root.querySelector(".close").onclick = () => done();
-  root.querySelector("#skip-note").onclick = () => done();
+  root.querySelector(".close").onclick = async () => {
+    try { await api.remove(movie.id); } catch (_) {}
+    closeOverlay();
+  };
   root.querySelector("#save-note").onclick = async () => {
     const val = root.querySelector("#note-input").value;
     try {
       if (val.trim()) await api.setNote(movie.id, val);
-      done("Note saved");
+      closeOverlay();
+      if (val.trim()) toast("Note saved");
+      switchView("rankings");
     } catch (e) {
       toast(e.message);
     }
