@@ -160,6 +160,47 @@ body {
   font-size: 16px; font-weight: 700; cursor: pointer;
 }
 .btn-primary:disabled { opacity: .55; }
+.btn-danger {
+  display: block; width: 100%; max-width: 480px; margin: 12px auto 0; padding: 14px;
+  border-radius: 14px; border: 1px solid var(--border); background: transparent;
+  color: #dc2626; font-size: 15px; font-weight: 600; cursor: pointer;
+}
+.btn-text { display: block; margin: 12px auto 0; background: none; border: none; color: var(--text-dim); font-size: 14px; font-weight: 600; cursor: pointer; padding: 8px; }
+
+/* ---------- Notes ---------- */
+.note-line {
+  margin-top: 7px; font-size: 12.5px; color: var(--text-dim); font-style: italic;
+  line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.note-editor { max-width: 480px; margin: 20px auto 0; text-align: left; }
+.note-label { display: block; font-size: 13px; font-weight: 700; color: var(--text-dim); margin: 0 4px 8px; }
+.note-label span { font-weight: 500; text-transform: none; }
+.note-input {
+  width: 100%; min-height: 110px; padding: 14px 16px; font-size: 15px; line-height: 1.5;
+  border-radius: 14px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); outline: none; resize: vertical; font-family: inherit;
+}
+.note-input:focus { border-color: var(--accent); }
+
+/* placed badge on the note prompt */
+.placed-wrap { position: relative; width: 132px; margin: 0 auto 16px; }
+.placed-wrap .poster.lg { margin: 0; }
+.placed-badge {
+  position: absolute; right: -10px; bottom: -10px; min-width: 44px; height: 44px; padding: 0 8px;
+  border-radius: 12px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 16px;
+  box-shadow: var(--shadow); border: 2px solid var(--bg);
+}
+
+/* show-notes on the compare screen */
+.show-notes-btn {
+  margin-top: 4px; background: var(--surface-2); border: none; color: var(--accent);
+  font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+}
+.note-pop {
+  margin-top: 8px; width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 12px; font-size: 12.5px; line-height: 1.45; color: var(--text);
+  text-align: left; white-space: pre-wrap; animation: pop .2s ease;
+}
 
 /* Comparison */
 .compare-head { text-align: center; padding: 8px 20px 4px; }

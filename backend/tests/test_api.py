@@ -80,6 +80,21 @@ def main():
         check(len(ranks) == 1 and ranks[0]["score"] == 10.0, "list shows the movie at 10.0")
         check(ranks[0]["poster_path"] == "/matrix.jpg", "poster_path present for saved movie")
 
+        print("\nNotes: set, update, appears in list, 404 when unranked")
+        r = client.put("/api/rankings/777/note", json={"notes": "  Loved the bullet-time  "})
+        check(r.status_code == 200 and r.json()["note"] == "Loved the bullet-time",
+              "PUT note trims + stores")
+        note = client.get("/api/rankings").json()["rankings"][0]["note"]
+        check(note == "Loved the bullet-time", "note surfaces in rankings list")
+        client.put("/api/rankings/777/note", json={"notes": "Changed my mind"})
+        check(client.get("/api/rankings").json()["rankings"][0]["note"] == "Changed my mind",
+              "PUT note updates in place")
+        client.put("/api/rankings/777/note", json={"notes": ""})
+        check(client.get("/api/rankings").json()["rankings"][0]["note"] is None,
+              "empty note clears to null")
+        r404 = client.put("/api/rankings/424242/note", json={"notes": "x"})
+        check(r404.status_code == 404, "note on unranked movie -> 404")
+
         print("\nStatic frontend served at /")
         html = client.get("/")
         check(html.status_code == 200 and "movie" in html.text.lower(), "index.html served at /")
