@@ -93,19 +93,59 @@ function rankCard(m) {
         <div class="rank-title">${esc(m.title)}</div>
         <div class="rank-sub">${esc(sub)}</div>
         ${genreChips(m.genres)}
+        ${m.note ? `<div class="note-line">📝 ${esc(m.note)}</div>` : ""}
       </div>
       <div class="score" style="background:${scoreColor(m.score)}">${m.score.toFixed(1)}</div>
     </div>`);
-  // Long-press / double-tap to remove.
-  card.addEventListener("dblclick", () => confirmRemove(m));
+  // Tap a card to view / edit its note or remove it.
+  card.addEventListener("click", () => openDetail(m));
   return card;
 }
 
-async function confirmRemove(m) {
-  if (!confirm(`Remove "${m.title}" from your rankings?`)) return;
-  await api.remove(m.id);
-  toast("Removed");
-  renderRankings();
+// Detail sheet: edit the note on an already-ranked movie, or remove it.
+function openDetail(m) {
+  const root = $("#overlay-root");
+  root.innerHTML = `
+    <div class="overlay">
+      <div class="overlay-head"><button class="close">✕</button></div>
+      <div class="overlay-body">
+        <div class="preview">
+          ${posterHtml(m, "w500", "poster lg")}
+          <h2>${esc(m.title)}</h2>
+          <div class="year">#${m.rank} · ${m.score.toFixed(1)}${
+            [m.release_year, m.director].filter(Boolean).length
+              ? " · " + [m.release_year, m.director].filter(Boolean).map(esc).join(" · ")
+              : ""
+          }</div>
+          ${genreChips(m.genres)}
+          <div class="note-editor">
+            <label class="note-label">Your notes</label>
+            <textarea class="note-input" id="note-input"
+              placeholder="What did you think? (hidden by default on the compare screen)">${esc(m.note || "")}</textarea>
+            <button class="btn-primary" id="save-note">Save notes</button>
+            <button class="btn-danger" id="remove-movie">Remove from rankings</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  root.querySelector(".close").onclick = closeOverlay;
+  root.querySelector("#save-note").onclick = async () => {
+    try {
+      await api.setNote(m.id, root.querySelector("#note-input").value);
+      toast("Notes saved");
+      closeOverlay();
+      renderRankings();
+    } catch (e) { toast(e.message); }
+  };
+  root.querySelector("#remove-movie").onclick = async () => {
+    if (!confirm(`Remove "${m.title}" from your rankings?`)) return;
+    try {
+      await api.remove(m.id);
+      toast("Removed");
+      closeOverlay();
+      renderRankings();
+    } catch (e) { toast(e.message); }
+  };
 }
 
 // ---------- Search ----------
@@ -214,12 +254,14 @@ function renderComparison(step, movie) {
             ${posterHtml(step.new_movie, "w342")}
             <div class="vs-title">${esc(step.new_movie.title)}</div>
             <div class="vs-year">${esc(step.new_movie.release_year || "")}</div>
+            ${noteToggleHtml(step.new_note)}
           </div>
           <div class="vs-card" data-prefer="against">
             <div class="badge-new" style="color:var(--text-dim)">Ranked</div>
             ${posterHtml(step.against, "w342")}
             <div class="vs-title">${esc(step.against.title)}</div>
             <div class="vs-year">${esc(step.against.release_year || "")}</div>
+            ${noteToggleHtml(step.against_note)}
           </div>
           <div class="vs-mid">VS</div>
         </div>
@@ -238,16 +280,73 @@ function renderComparison(step, movie) {
       }
     };
   });
+  // "Show notes" toggles the note under a movie without triggering the pick.
+  root.querySelectorAll(".show-notes-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const pop = btn.nextElementSibling;
+      const nowHidden = !pop.hidden;
+      pop.hidden = nowHidden;
+      btn.textContent = nowHidden ? "📝 Show notes" : "📝 Hide notes";
+    });
+  });
+  root.querySelectorAll(".note-pop").forEach((p) =>
+    p.addEventListener("click", (e) => e.stopPropagation())
+  );
+}
+
+// Renders a hidden note + a toggle button, or nothing if there's no note.
+function noteToggleHtml(note) {
+  if (!note) return "";
+  return `<button class="show-notes-btn" type="button">📝 Show notes</button>
+          <div class="note-pop" hidden>${esc(note)}</div>`;
 }
 
 function finishPlacement(result, movie) {
-  closeOverlay();
   if (result.already_ranked) {
+    closeOverlay();
     toast(`${movie.title} is already ranked`);
-  } else {
-    toast(`${movie.title} ranked #${result.position + 1} · ${result.score.toFixed(1)}`);
+    switchView("rankings");
+    return;
   }
-  switchView("rankings");
+  renderNotePrompt(result, movie);
+}
+
+// After a movie lands, offer to jot a note (optional).
+function renderNotePrompt(result, movie) {
+  const root = $("#overlay-root");
+  root.innerHTML = `
+    <div class="overlay">
+      <div class="overlay-head"><button class="close">Skip</button></div>
+      <div class="overlay-body">
+        <div class="preview">
+          <div class="placed-wrap">
+            ${posterHtml(movie, "w342", "poster lg")}
+            <div class="placed-badge" style="background:${scoreColor(result.score)}">${result.score.toFixed(1)}</div>
+          </div>
+          <h2>${esc(movie.title)}</h2>
+          <div class="year">Ranked #${result.position + 1} in your list</div>
+          <div class="note-editor">
+            <label class="note-label">Add a note <span>(optional)</span></label>
+            <textarea class="note-input" id="note-input" placeholder="What stuck with you?"></textarea>
+            <button class="btn-primary" id="save-note">Save note</button>
+            <button class="btn-text" id="skip-note">Skip for now</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  const done = (msg) => { closeOverlay(); if (msg) toast(msg); switchView("rankings"); };
+  root.querySelector(".close").onclick = () => done();
+  root.querySelector("#skip-note").onclick = () => done();
+  root.querySelector("#save-note").onclick = async () => {
+    const val = root.querySelector("#note-input").value;
+    try {
+      if (val.trim()) await api.setNote(movie.id, val);
+      done("Note saved");
+    } catch (e) {
+      toast(e.message);
+    }
+  };
 }
 
 // ---------- Status indicator ----------

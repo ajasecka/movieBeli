@@ -88,6 +88,7 @@ class Ranking(Base):
     movie_id = Column(BigInteger, ForeignKey("movie.id"), nullable=False)
     position = Column(Integer, nullable=False)
     score = Column(Float, nullable=False, default=0.0)
+    notes = Column(Text)  # your personal note about this movie
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
 

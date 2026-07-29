@@ -167,6 +167,9 @@ def _next_comparison(p: Placement) -> dict:
     with session_scope() as s:
         new_movie = s.get(Movie, p.movie_id)
         against = s.get(Movie, against_id)
+        against_note = s.execute(
+            select(Ranking.notes).where(Ranking.movie_id == against_id)
+        ).scalar_one_or_none()
         payload = {
             "done": False,
             "placement_id": p.id,
@@ -175,7 +178,9 @@ def _next_comparison(p: Placement) -> dict:
             "comparisons_done": p.comparisons_done,
             "estimated_total": p.estimated_total,
             "new_movie": new_movie.as_dict(),
+            "new_note": None,  # the movie being added isn't ranked yet
             "against": against.as_dict(),
+            "against_note": against_note,
         }
     return payload
 
@@ -256,8 +261,23 @@ def get_rankings() -> list[dict]:
             d["position"] = ranking.position
             d["rank"] = ranking.position + 1
             d["score"] = ranking.score
+            d["note"] = ranking.notes
             out.append(d)
         return out
+
+
+def set_note(movie_id: int, notes: str | None) -> dict | None:
+    """Set (or clear) the personal note on a ranked movie. Returns the movie's
+    updated ranking dict, or None if the movie isn't ranked."""
+    cleaned = (notes or "").strip() or None
+    with session_scope() as s:
+        row = s.execute(
+            select(Ranking).where(Ranking.movie_id == movie_id)
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        row.notes = cleaned
+    return {"movie_id": movie_id, "note": cleaned}
 
 
 def remove_ranking(movie_id: int) -> list[dict]:

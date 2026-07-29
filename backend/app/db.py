@@ -48,3 +48,5 @@ def init_db() -> None:
                 "ON movie_index (popularity DESC)"
             )
         )
+        # Idempotent add for databases created before notes existed.
+        conn.execute(text("ALTER TABLE ranking ADD COLUMN IF NOT EXISTS notes text"))

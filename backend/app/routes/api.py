@@ -93,6 +93,10 @@ class CompareBody(BaseModel):
     prefer_new: bool
 
 
+class NoteBody(BaseModel):
+    notes: str | None = None
+
+
 @router.get("/rankings")
 def list_rankings():
     return {"rankings": ranking.get_rankings()}
@@ -111,6 +115,14 @@ def compare(body: CompareBody):
         return ranking.submit_comparison(body.placement_id, body.prefer_new)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.put("/rankings/{movie_id}/note")
+def set_note(movie_id: int, body: NoteBody):
+    result = ranking.set_note(movie_id, body.notes)
+    if result is None:
+        raise HTTPException(status_code=404, detail="That movie isn't in your rankings.")
+    return result
 
 
 @router.delete("/rankings/{movie_id}")
