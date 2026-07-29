@@ -118,7 +118,12 @@ body {
 .result-row:active { background: var(--surface-2); }
 .result-title { font-weight: 600; font-size: 15px; }
 .result-row .go { margin-left: auto; color: var(--accent); font-weight: 700; }
-.result-row.ranked .go { color: var(--text-dim); font-weight: 500; font-size: 13px; }
+.result-rank { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.result-rank .mini-score {
+  min-width: 34px; height: 26px; padding: 0 6px; border-radius: 8px; color: #fff;
+  font-weight: 800; font-size: 13px; display: grid; place-items: center;
+}
+.result-rank .rank-hash { color: var(--text-dim); font-weight: 700; font-size: 13px; min-width: 26px; text-align: right; }
 .hint { color: var(--text-dim); font-size: 13px; text-align: center; padding: 32px 16px; line-height: 1.5; }
 
 /* ---------- Tab bar ---------- */

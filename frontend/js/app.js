@@ -102,6 +102,18 @@ function rankCard(m) {
   return card;
 }
 
+// From a search result, look up the full ranked entry and open its detail.
+async function openRankedDetail(id) {
+  try {
+    const { rankings } = await api.rankings();
+    const m = rankings.find((x) => x.id === id);
+    if (m) openDetail(m);
+    else toast("That movie isn't in your rankings anymore.");
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
 // Detail sheet: edit the note on an already-ranked movie, or remove it.
 function openDetail(m) {
   const root = $("#overlay-root");
@@ -181,12 +193,19 @@ async function doSearch(q) {
     }
     listEl.innerHTML = "";
     results.forEach((r) => {
+      const right = r.already_ranked
+        ? `<div class="result-rank">
+             <span class="mini-score" style="background:${scoreColor(r.score)}">${r.score.toFixed(1)}</span>
+             <span class="rank-hash">#${r.rank}</span>
+           </div>`
+        : `<div class="go">Add →</div>`;
       const row = el(`
         <div class="result-row ${r.already_ranked ? "ranked" : ""}">
           <div class="result-title">${esc(r.title)}</div>
-          <div class="go">${r.already_ranked ? "Ranked ✓" : "Add →"}</div>
+          ${right}
         </div>`);
-      if (!r.already_ranked) row.onclick = () => openPreview(r.id);
+      // Unranked -> add & rank. Already-ranked -> open its detail (view/edit note).
+      row.onclick = () => (r.already_ranked ? openRankedDetail(r.id) : openPreview(r.id));
       listEl.appendChild(row);
     });
   } catch (e) {
