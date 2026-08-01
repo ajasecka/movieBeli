@@ -145,6 +145,14 @@ body {
 }
 .add-search-input:focus { border-color: var(--accent); }
 
+/* ---------- Genre filter (inline in search header) ---------- */
+.genre-select {
+  flex: 0 0 auto; max-width: 130px; padding: 8px 10px; font-size: 13px;
+  border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); outline: none; cursor: pointer; font-family: inherit;
+}
+.genre-select:focus { border-color: var(--accent); }
+
 /* ---------- Search results (shared by add overlay) ---------- */
 .result-list { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
 .result-row {

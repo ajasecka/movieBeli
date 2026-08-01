@@ -456,6 +456,41 @@ function openDetail(m) {
 }
 
 // ---------- Add-movie overlay ----------
+function buildResultRow(r, preferWatchlist) {
+  let right;
+  if (r.already_ranked) {
+    right = `<div class="result-rank">
+         <span class="mini-score" style="background:${scoreColor(r.score, r.tier)}">${r.score.toFixed(1)}</span>
+         <span class="rank-hash">#${r.rank}</span>
+       </div>`;
+  } else if (r.in_watchlist) {
+    right = `<div class="go wl">🔖 Watchlist</div>`;
+  } else {
+    right = preferWatchlist ? `<div class="go wl">🔖 Save</div>` : "";
+  }
+  const metaParts = [];
+  if (r.release_year) metaParts.push(r.release_year);
+  if (r.vote_average) {
+    const count = r.vote_count ? ` (${r.vote_count.toLocaleString()})` : "";
+    metaParts.push(`★ ${r.vote_average.toFixed(1)}${count}`);
+  }
+  if (r.genres && r.genres.length) metaParts.push(r.genres.slice(0, 2).join(", "));
+  const metaHtml = metaParts.length
+    ? `<div class="result-meta">${esc(metaParts.join(" · "))}</div>`
+    : "";
+  const row = el(`
+    <div class="result-row ${r.already_ranked ? "ranked" : ""}">
+      <div class="result-title-wrap">
+        <div class="result-title">${esc(r.title)}</div>
+        ${metaHtml}
+      </div>
+      ${right}
+    </div>`);
+  row.onclick = () =>
+    r.already_ranked ? openRankedDetail(r.id) : openPreview(r.id, r.in_watchlist, preferWatchlist);
+  return row;
+}
+
 function openAddOverlay() {
   const root = $("#overlay-root");
   root.innerHTML = `
@@ -463,6 +498,9 @@ function openAddOverlay() {
       <div class="add-overlay-head">
         <input class="add-search-input" id="add-search-input" type="search"
                placeholder="Search a movie…" autocomplete="off" />
+        <select class="genre-select" id="genre-select" hidden>
+          <option value="">All genres</option>
+        </select>
         <button class="close">✕</button>
       </div>
       <div class="overlay-body" style="padding-top: 8px;">
@@ -474,71 +512,67 @@ function openAddOverlay() {
   const input = root.querySelector("#add-search-input");
   const listEl = root.querySelector("#add-result-list");
   const hintEl = root.querySelector("#add-search-hint");
+  const genreSelect = root.querySelector("#genre-select");
+  const preferWatchlist = state.view === "watchlist";
+  let lastResults = [];
   let timer = null;
+
+  const renderFiltered = () => {
+    const genre = genreSelect.value;
+    const filtered = genre
+      ? lastResults.filter((r) => r.genres && r.genres.includes(genre))
+      : lastResults;
+    listEl.innerHTML = "";
+    filtered.forEach((r) => listEl.appendChild(buildResultRow(r, preferWatchlist)));
+    if (!filtered.length && lastResults.length) {
+      hintEl.style.display = "block";
+      hintEl.textContent = `No ${genre} movies in these results.`;
+    } else {
+      hintEl.style.display = "none";
+    }
+  };
+
+  genreSelect.addEventListener("change", renderFiltered);
+
   input.addEventListener("input", () => {
     clearTimeout(timer);
-    timer = setTimeout(() => _doSearch(input.value, listEl, hintEl), 220);
+    timer = setTimeout(async () => {
+      const q = input.value.trim();
+      if (!q) {
+        lastResults = [];
+        listEl.innerHTML = "";
+        genreSelect.hidden = true;
+        genreSelect.innerHTML = '<option value="">All genres</option>';
+        hintEl.style.display = "block";
+        hintEl.textContent = "Type a title to get started.";
+        return;
+      }
+      hintEl.style.display = "none";
+      try {
+        const { results } = await api.search(q);
+        lastResults = results;
+        genreSelect.value = "";
+        if (!results.length) {
+          listEl.innerHTML = "";
+          genreSelect.hidden = true;
+          hintEl.style.display = "block";
+          hintEl.textContent = `No matches for "${q}".`;
+          return;
+        }
+        const genres = [...new Set(results.flatMap((r) => r.genres || []))].sort();
+        genreSelect.innerHTML =
+          '<option value="">All genres</option>' +
+          genres.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join("");
+        genreSelect.hidden = !genres.length;
+        renderFiltered();
+      } catch (e) {
+        hintEl.style.display = "block";
+        hintEl.textContent = e.message;
+      }
+    }, 220);
   });
-  requestAnimationFrame(() => input.focus());
-}
 
-async function _doSearch(q, listEl, hintEl) {
-  q = q.trim();
-  if (!q) {
-    listEl.innerHTML = "";
-    hintEl.style.display = "block";
-    hintEl.textContent = "Type a title to get started.";
-    return;
-  }
-  hintEl.style.display = "none";
-  try {
-    const { results } = await api.search(q);
-    if (!results.length) {
-      listEl.innerHTML = "";
-      hintEl.style.display = "block";
-      hintEl.textContent = `No matches for "${q}".`;
-      return;
-    }
-    listEl.innerHTML = "";
-    const preferWatchlist = state.view === "watchlist";
-    results.forEach((r) => {
-      let right;
-      if (r.already_ranked) {
-        right = `<div class="result-rank">
-             <span class="mini-score" style="background:${scoreColor(r.score, r.tier)}">${r.score.toFixed(1)}</span>
-             <span class="rank-hash">#${r.rank}</span>
-           </div>`;
-      } else if (r.in_watchlist) {
-        right = `<div class="go wl">🔖 Watchlist</div>`;
-      } else {
-        right = preferWatchlist ? `<div class="go wl">🔖 Save</div>` : "";
-      }
-      const metaParts = [];
-      if (r.release_year) metaParts.push(r.release_year);
-      if (r.vote_average) {
-        const count = r.vote_count ? ` (${r.vote_count.toLocaleString()})` : "";
-        metaParts.push(`★ ${r.vote_average.toFixed(1)}${count}`);
-      }
-      if (r.genres && r.genres.length) metaParts.push(r.genres.slice(0, 2).join(", "));
-      const metaHtml = metaParts.length
-        ? `<div class="result-meta">${esc(metaParts.join(" · "))}</div>`
-        : "";
-      const row = el(`
-        <div class="result-row ${r.already_ranked ? "ranked" : ""}">
-          <div class="result-title-wrap">
-            <div class="result-title">${esc(r.title)}</div>
-            ${metaHtml}
-          </div>
-          ${right}
-        </div>`);
-      row.onclick = () =>
-        r.already_ranked ? openRankedDetail(r.id) : openPreview(r.id, r.in_watchlist, preferWatchlist);
-      listEl.appendChild(row);
-    });
-  } catch (e) {
-    hintEl.style.display = "block";
-    hintEl.textContent = e.message;
-  }
+  requestAnimationFrame(() => input.focus());
 }
 
 // ---------- Overlays ----------
